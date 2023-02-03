@@ -23,7 +23,7 @@ class TestPostForm(TestCase):
         )
         cls.post = Post.objects.create(
             group=cls.group_0,
-            text=f'test text',
+            text='test text',
             author=cls.user
         )
         cls.form_data = {

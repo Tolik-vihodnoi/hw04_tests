@@ -175,7 +175,8 @@ class PostViewTest(TestCase):
             author=PostViewTest.user_1).count() % settings.NUM_OF_POSTS
         count_posts_dict = {
             reverse('posts:index'): settings.NUM_OF_POSTS,
-            PostViewTest.do_url_last_page(self, reverse('posts:index')): posts_mod,
+            PostViewTest.do_url_last_page(self,
+                                          reverse('posts:index')): posts_mod,
             reverse('posts:group_list',
                     args=(PostViewTest.group_0.slug,)): settings.NUM_OF_POSTS,
             PostViewTest.do_url_last_page(self, reverse(
