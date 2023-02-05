@@ -7,7 +7,7 @@ from ..models import Group, Post
 User = get_user_model()
 
 
-class PostModelTest(TestCase):
+class PostTest(TestCase):
     """Тест моделей приложения posts."""
     @classmethod
     def setUpClass(cls):
@@ -26,9 +26,8 @@ class PostModelTest(TestCase):
     def test_models_have_correct_object_names(self):
         """Проверяем, что у моделей корректно работает __str__."""
         models = {
-            PostModelTest.post: PostModelTest.post.text[
-                                :settings.DISP_LETTERS],
-            PostModelTest.group: PostModelTest.group.title
+            PostTest.post: PostTest.post.text[:settings.DISP_LETTERS],
+            PostTest.group: PostTest.group.title
         }
         for obj, field in models.items():
             with self.subTest(obj=obj):
@@ -41,6 +40,6 @@ class PostModelTest(TestCase):
         for field, text in field_dict.items():
             with self.subTest(field=field):
                 self.assertEqual(
-                    PostModelTest.post._meta.get_field(field).help_text,
+                    PostTest.post._meta.get_field(field).help_text,
                     text
                 )
