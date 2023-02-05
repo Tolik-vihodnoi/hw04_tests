@@ -43,6 +43,7 @@ class Post(models.Model):
         ordering = ['-pub_date']
         verbose_name = 'Пост'
         verbose_name_plural = 'Посты'
+        get_latest_by = ['pub_date']
 
     def __str__(self):
         return self.text[:settings.DISP_LETTERS]

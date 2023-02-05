@@ -1,10 +1,10 @@
 from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.paginator import Page
 from django.test import Client, TestCase
 from django.urls import reverse
-from django.core.paginator import Page
-
+from posts.forms import PostForm
 from posts.models import Group, Post
 
 User = get_user_model()
@@ -12,15 +12,22 @@ User = get_user_model()
 
 class PostViewTest(TestCase):
 
-    def do_url_last_page(self, url: str) -> str:
-        """Принимает на вход валидный юрл, принимает из контекста page_obj и
-        возвращает юрл с указанием на последнюю страницу пагинатора."""
-        response = self.auth_client_0.get(url)
-        page_obj = response.context.get('page_obj')
-        if isinstance(page_obj, Page):
-            last_page_value = page_obj.paginator.num_pages
-            return url + f'?page={str(last_page_value)}'
-        raise Exception('Контекст страницы не содержит объекта page_obj')
+    @staticmethod
+    def extract_post(context):
+        post = context.get('post')
+        page_obj = context.get('page_obj')
+        if post and isinstance(post, Post):
+            ext_post = context.get('post')
+        elif page_obj and isinstance(page_obj, Page):
+            ext_post = context.get('page_obj')[0]
+        else:
+            raise AssertionError('There is no valid post or '
+                                 'page_obj in the context')
+        if isinstance(ext_post, Post):
+            return ext_post
+        else:
+            raise AssertionError('The extracting obj is '
+                                 'not an instance of Post')
 
     @classmethod
     def setUpClass(cls):
@@ -37,160 +44,164 @@ class PostViewTest(TestCase):
             slug='test_group_1',
             description='Тестовое описание 1'
         )
-        for i in range(28):
-            Post.objects.create(
-                group=cls.group_0 if i <= 14 else cls.group_1,
-                text=f'text of article number {i}',
-                author=cls.user_0 if i <= 14 else cls.user_1,
-            )
+        cls.post = Post.objects.create(
+            group=cls.group_0,
+            text='text of test article',
+            author=cls.user_0
+        )
+        cls.form_fields_list = {
+            'group': forms.ChoiceField,
+            'text': forms.CharField,
+        }
 
     def setUp(self):
-        self.url_name_dict = {
-            reverse('posts:index'): 'posts/index.html',
-            reverse(
-                'posts:group_list',
-                kwargs={'slug': PostViewTest.group_0.slug}
-            ): 'posts/group_list.html',
-            reverse(
-                'posts:profile',
-                kwargs={'username': PostViewTest.user_0}
-            ): 'posts/profile.html',
-            reverse(
-                'posts:post_detail', kwargs={'post_id': 12}
-            ): 'posts/post_detail.html',
-            reverse(
-                'posts:post_edit', kwargs={'post_id': 12}
-            ): 'posts/create_post.html',
-            reverse('posts:post_create'): 'posts/create_post.html',
-        }
         self.auth_client_0 = Client()
         self.auth_client_0.force_login(PostViewTest.user_0)
-        self.post_count = Post.objects.count()
-        self.count_gr0_post = Post.objects.filter(
-            group=PostViewTest.group_0).count()
-        self.count_u1_post = Post.objects.filter(
-            author=PostViewTest.user_1).count()
 
     def test_pages_use_correct_templates(self):
         """Проверяет, что namespace:name вызывает корректные шаблоны"""
-        for url_name, templ in self.url_name_dict.items():
+        url_name_dict = {
+            reverse('posts:index'): 'posts/index.html',
+            reverse('posts:group_list', args=(PostViewTest.group_0.slug,)
+                    ): 'posts/group_list.html',
+            reverse('posts:profile', args=(PostViewTest.user_0,)
+                    ): 'posts/profile.html',
+            reverse('posts:post_detail', args=(PostViewTest.post.id,)
+                    ): 'posts/post_detail.html',
+            reverse('posts:post_edit', args=(PostViewTest.post.id,)
+                    ): 'posts/create_post.html',
+            reverse('posts:post_create'): 'posts/create_post.html',
+        }
+        for url_name, templ in url_name_dict.items():
             with self.subTest(url_name=url_name):
                 response = self.auth_client_0.get(url_name)
                 self.assertTemplateUsed(response, templ)
 
-    def test_pages_use_correct_context_filtered_page_obj(self):
-        """Проверяет корректность использованных в контексте page_obj,
-        отсортированных по группе или автору в зависимости от адреса"""
+    def test_correct_page_obj_or_post_in_context(self):
         url_list = [
-            (reverse('posts:index') + '?page=3'),
-            reverse('posts:group_list',
-                    kwargs={'slug': PostViewTest.group_0.slug}),
-            reverse('posts:profile',
-                    kwargs={'username': PostViewTest.user_0.username})
+            reverse('posts:index'),
+            reverse('posts:group_list', args=(PostViewTest.group_0.slug,)),
+            reverse('posts:profile', args=(PostViewTest.user_0,)),
+            reverse('posts:post_detail', args=(PostViewTest.post.pk,)),
         ]
-        for url_name in url_list:
-            with self.subTest(url_name=url_name):
-                response = self.auth_client_0.get(url_name)
-                first_obj = response.context.get('page_obj')[0]
-                post_group = first_obj.group.title
-                post_text = first_obj.text
-                post_author = first_obj.author.username
-                self.assertEqual(post_group, PostViewTest.group_0.title)
-                self.assertEqual(
-                    post_text,
-                    ('text of article number 7' if url_name == url_list[0]
-                     else 'text of article number 14')
-                )
-                self.assertEqual(post_author, PostViewTest.user_0.username)
+        for url in url_list:
+            with self.subTest(url=url):
+                context = self.auth_client_0.get(url).context
+                self.assertEqual(PostViewTest.extract_post(context).pk,
+                                 PostViewTest.post.pk)
 
-    def test_pages_use_correct_context_group(self):
+    def test_tested_post_not_exist(self):
+        url_list = [
+            reverse('posts:group_list', args=(PostViewTest.group_1.slug,)),
+            reverse('posts:profile', args=(PostViewTest.user_1,)),
+        ]
+        for url in url_list:
+            with self.subTest(url=url):
+                with self.assertRaisesMessage(
+                        AssertionError,
+                        'There is no valid post or page_obj in the context'
+                ):
+                    context = self.auth_client_0.get(url).context
+                    self.assertEqual(PostViewTest.extract_post(context).pk,
+                                     PostViewTest.post.pk)
+
+    def test_correct_group_in_context(self):
         """Проверяет коррекстность переданного в контексте объекта group."""
         response = self.auth_client_0.get(
-            reverse('posts:group_list',
-                    kwargs={'slug': PostViewTest.group_0.slug})
+            reverse('posts:group_list', args=(PostViewTest.group_0.slug,))
         )
         group_obj = response.context.get('group')
-        self.assertEqual(group_obj.title, PostViewTest.group_0.title)
-        self.assertEqual(group_obj.slug, PostViewTest.group_0.slug)
-        self.assertEqual(group_obj.description,
-                         PostViewTest.group_0.description)
+        self.assertEqual(group_obj, PostViewTest.group_0)
 
-    def test_pages_use_correct_context_posts_owner(self):
+    def test_correct_posts_owner_in_context(self):
         """Проверяет коррекстность переданного в контексте объекта владельца
          поста."""
         response = self.auth_client_0.get(
-            reverse('posts:profile',
-                    kwargs={'username': PostViewTest.user_0.username})
+            reverse('posts:profile', args=(PostViewTest.user_0.username,))
         )
         user_obj = response.context.get('posts_owner')
-        self.assertEqual(user_obj.username, PostViewTest.user_0.username)
-
-    def test_pages_use_correct_context_post(self):
-        """Проверяет коррекстность переданного в контексте поста,
-        отфильтрованного по id."""
-        response = self.auth_client_0.get(
-            reverse('posts:post_detail', kwargs={'post_id': 20})
-        )
-        post_obj = response.context.get('post')
-        self.assertEqual(post_obj.group.title, PostViewTest.group_1.title)
-        self.assertEqual(post_obj.text, 'text of article number 19')
-        self.assertEqual(post_obj.author.username,
-                         PostViewTest.user_1.username)
+        self.assertEqual(user_obj, PostViewTest.user_0)
 
     def test_form_creating_post(self):
         """Проверяет форму создания поста на коррекстность типов полей."""
-        form_fields_list = {
-            'group': forms.ChoiceField,
-            'text': forms.CharField,
-        }
         response = self.auth_client_0.get(reverse('posts:post_create'))
-        for field, form_field in form_fields_list.items():
+        for field, form_field in PostViewTest.form_fields_list.items():
             with self.subTest(field=field):
-                resp_field = response.context.get('form').fields.get(field)
-                self.assertIsInstance(resp_field, form_field)
+                form_obj = response.context.get('form')
+                if isinstance(form_obj, PostForm):
+                    field_value = form_obj.fields.get(field)
+                    self.assertIsInstance(field_value, form_field)
+                else:
+                    raise AssertionError('There is no form in context or it '
+                                         'is not instance of PostForm')
 
     def test_form_editing_post(self):
-        """Проверяет форму редактирования поста на коррекстность
-        типов полей."""
-        form_fields_list = {
-            'group': forms.ChoiceField,
-            'text': forms.CharField,
-        }
+        """Проверяет форму редактирования поста, отфильтрованного по id,
+        на коррекстность типов полей."""
         response = self.auth_client_0.get(
-            reverse('posts:post_edit',
-                    kwargs={'post_id': 1})
+            reverse('posts:post_edit', args=(PostViewTest.post.pk,))
         )
-        for field, form_field in form_fields_list.items():
+        for field, form_field in PostViewTest.form_fields_list.items():
             with self.subTest(field=field):
-                resp_field = response.context.get('form').fields.get(field)
-                self.assertIsInstance(resp_field, form_field)
+                form_obj = response.context.get('form')
+                if isinstance(form_obj, PostForm):
+                    field_value = form_obj.fields.get(field)
+                    self.assertIsInstance(field_value, form_field)
+                else:
+                    raise AssertionError('There is no form in context or it '
+                                         'is not instance of PostForm')
+
+
+class PaginatorTest(TestCase):
+
+    PLUS_POSTS: int = 3
+
+    @staticmethod
+    def do_second_page(url: str) -> str:
+        """Принимает на вход юрл и возвращает этот же юрл, но с указанием
+        на вторую страницу пагинатора."""
+        if isinstance(url, str):
+            return url + '?page=2'
+        raise AssertionError('В функцию do_second_page передан '
+                             f'тип {type(url)} вместо str')
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.user = User.objects.create(username='FatWhiteFamily')
+        cls.group_0 = Group.objects.create(
+            title='Тестовая группа 0',
+            slug='test_group_0',
+            description='Тестовое описание 0'
+        )
+        cls.group_1 = Group.objects.create(
+            title='Тестовая группа 1',
+            slug='test_group_1',
+            description='Тестовое описание 1'
+        )
+        Post.objects.bulk_create(
+            [Post(group=cls.group_0, text=f'text number {i}', author=cls.user)
+             for i in range(settings.NUM_OF_POSTS + PaginatorTest.PLUS_POSTS)]
+        )
+        cls.urls_to_count = [
+            reverse('posts:index'),
+            reverse('posts:group_list', args=(PaginatorTest.group_0.slug,)),
+            reverse('posts:profile', args=(PaginatorTest.user.username,)),
+        ]
+
+    def setUp(self):
+        self.auth_client = Client()
+        self.auth_client.force_login(PaginatorTest.user)
 
     def test_paginator(self):
         """Проверяет пагинатор на соответствие назначенному кол-ву объектов
-        на первой странице и последней."""
-        posts_mod = Post.objects.count() % settings.NUM_OF_POSTS
-        gr0_posts_mod = Post.objects.filter(
-            group=PostViewTest.group_0).count() % settings.NUM_OF_POSTS
-        u1_posts_mod = Post.objects.filter(
-            author=PostViewTest.user_1).count() % settings.NUM_OF_POSTS
-        count_posts_dict = {
-            reverse('posts:index'): settings.NUM_OF_POSTS,
-            PostViewTest.do_url_last_page(self,
-                                          reverse('posts:index')): posts_mod,
-            reverse('posts:group_list',
-                    args=(PostViewTest.group_0.slug,)): settings.NUM_OF_POSTS,
-            PostViewTest.do_url_last_page(self, reverse(
-                'posts:group_list',
-                args=(PostViewTest.group_0.slug,))): gr0_posts_mod,
-            reverse('posts:profile',
-                    kwargs={'username': PostViewTest.user_1.username
-                            }): settings.NUM_OF_POSTS,
-            PostViewTest.do_url_last_page(self, reverse(
-                'posts:profile',
-                args=(PostViewTest.user_1.username,))): u1_posts_mod,
-        }
-        for url_name, num_of_posts in count_posts_dict.items():
+        на первой странице и второй (подразумевается последней)."""
+        for url_name in PaginatorTest.urls_to_count:
             with self.subTest(url_name=url_name):
-                response = self.auth_client_0.get(url_name)
-                len_posts = len(response.context.get('page_obj'))
-                self.assertEqual(len_posts, num_of_posts)
+                resp_1_page = self.auth_client.get(url_name)
+                resp_2_page = self.auth_client.get(
+                    PaginatorTest.do_second_page(url_name))
+                len_1page_posts = len(resp_1_page.context.get('page_obj'))
+                len_2page_posts = len(resp_2_page.context.get('page_obj'))
+                self.assertEqual(len_1page_posts, settings.NUM_OF_POSTS)
+                self.assertEqual(len_2page_posts, PaginatorTest.PLUS_POSTS)

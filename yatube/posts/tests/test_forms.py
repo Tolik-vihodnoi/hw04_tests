@@ -30,9 +30,6 @@ class TestPostForm(TestCase):
             'text': 'Just a correct text',
             'group': TestPostForm.group_1.pk
         }
-        cls.redirects = {
-            reverse
-        }
 
     def setUp(self):
         self.auth_client = Client()
@@ -47,10 +44,12 @@ class TestPostForm(TestCase):
             follow=True
         )
         self.assertRedirects(response, reverse(
-            'posts:profile',
-            args=(TestPostForm.user.username,)
-        ))
+            'posts:profile', args=(TestPostForm.user.username,)))
         self.assertEqual(post_count + 1, Post.objects.count())
+        self.assertEqual(Post.objects.first().text,
+                         TestPostForm.form_data.get('text'))
+        self.assertEqual(Post.objects.latest().group.pk,
+                         TestPostForm.form_data.get('group'))
 
     def test_edit_post(self):
         post_count = Post.objects.count()
@@ -60,12 +59,11 @@ class TestPostForm(TestCase):
             data=TestPostForm.form_data,
             follow=True
         )
+        post_obj = Post.objects.get(id=TestPostForm.post.id)
         self.assertRedirects(response, reverse(
             'posts:post_detail',
             args=(TestPostForm.post.id,)
         ))
         self.assertEqual(post_count, Post.objects.count())
-        self.assertEqual(Post.objects.get(id=TestPostForm.post.id).text,
-                         TestPostForm.form_data.get('text'))
-        self.assertEqual(Post.objects.get(id=TestPostForm.post.id).group.slug,
-                         TestPostForm.group_1.slug)
+        self.assertEqual(post_obj.text, TestPostForm.form_data.get('text'))
+        self.assertEqual(post_obj.group.slug, TestPostForm.group_1.slug)

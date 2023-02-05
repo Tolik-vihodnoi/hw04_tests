@@ -1,11 +1,8 @@
-import unittest
 from http import HTTPStatus
 
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
-
 from ..models import Group, Post
-
 
 User = get_user_model()
 
@@ -36,17 +33,18 @@ class PostUrlTest(TestCase):
         self.not_author_client.force_login(PostUrlTest.not_author_user)
         self.url_dict_unauth = {
             '/': 'posts/index.html',
-            '/group/test_group/': 'posts/group_list.html',
-            '/profile/TestUser/': 'posts/profile.html',
-            '/posts/1/': 'posts/post_detail.html',
+            f'/group/{PostUrlTest.group.slug}/': 'posts/group_list.html',
+            f'/profile/{PostUrlTest.user.username}/': 'posts/profile.html',
+            f'/posts/{PostUrlTest.post.id}/': 'posts/post_detail.html',
         }
         self.url_dict_auth = {
             '/create/': 'posts/create_post.html',
-            '/posts/1/edit/': 'posts/create_post.html',
+            f'/posts/{PostUrlTest.post.id}/edit/': 'posts/create_post.html',
         }
         self.redirect_dict_unauth = {
             '/create/': '/auth/login/?next=/create/',
-            '/posts/1/edit/': '/auth/login/?next=/posts/1/edit/',
+            (f'/posts/{PostUrlTest.post.id}/'
+             f'edit/'): f'/auth/login/?next=/posts/{PostUrlTest.post.id}/edit/'
         }
 
     def test_url_exists_at_desired_location_for_unauth_users(self):
@@ -64,12 +62,11 @@ class PostUrlTest(TestCase):
                 response = self.auth_client.get(url)
                 self.assertEqual(response.status_code, HTTPStatus.OK)
 
-    @unittest.expectedFailure
     def test_unexisting_page_url_for_auth_users(self):
         """Проверяет, что возникает ошибка при переходе на
         несуществующий url."""
         response = self.auth_client.get('/unexisting_page/')
-        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
     def test_redirect_if_post_by_not_author_but_auth_user(self):
         """Проверяет будет ли редирект со страницы правки поста
