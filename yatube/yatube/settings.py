@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'users.apps.UsersConfig',
     'core.apps.CoreConfig',
     'about.apps.AboutConfig',
+    'sorl.thumbnail'
 ]
 
 MIDDLEWARE = [
@@ -137,10 +138,14 @@ STATICFILES_DIRS = [
 
 EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
 EMAIL_FILE_PATH = os.path.join(BASE_DIR, 'sent_emails')
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # My variables
+
 NUM_OF_POSTS: int = 10
 DISP_LETTERS = 15
 LOGIN_URL = 'users:login'
 LOGIN_REDIRECT_URL = 'posts:index'
+CSRF_FAILURE_VIEW = 'core.views.csrf_failure'
 # LOGOUT_REDIRECT_URL = 'posts:index'

@@ -21,11 +21,6 @@ class TestPostForm(TestCase):
             title='Test group_1',
             slug='test_group_1'
         )
-        cls.post = Post.objects.create(
-            group=cls.group_0,
-            text='test text',
-            author=cls.user
-        )
         cls.form_data = {
             'text': 'Just a correct text',
             'group': TestPostForm.group_1.pk
@@ -34,10 +29,17 @@ class TestPostForm(TestCase):
     def setUp(self):
         self.auth_client = Client()
         self.auth_client.force_login(TestPostForm.user)
+        self.post = Post.objects.create(
+            group=TestPostForm.group_0,
+            text='test text',
+            author=TestPostForm.user
+        )
+
+    def tearDown(self) -> None:
+        Post.objects.all().delete()
 
     def test_create_post(self):
-        post_count = Post.objects.count()
-
+        Post.objects.all().delete()
         response = self.auth_client.post(
             path=reverse('posts:post_create'),
             data=TestPostForm.form_data,
@@ -45,25 +47,25 @@ class TestPostForm(TestCase):
         )
         self.assertRedirects(response, reverse(
             'posts:profile', args=(TestPostForm.user.username,)))
-        self.assertEqual(post_count + 1, Post.objects.count())
-        self.assertEqual(Post.objects.first().text,
-                         TestPostForm.form_data.get('text'))
-        self.assertEqual(Post.objects.latest().group.pk,
-                         TestPostForm.form_data.get('group'))
+        self.assertEqual(Post.objects.count(), 1)
+        post_obj = Post.objects.first()
+        self.assertEqual(post_obj.text,
+                         TestPostForm.form_data['text'])
+        self.assertEqual(post_obj.group.pk,
+                         TestPostForm.form_data['group'])
 
     def test_edit_post(self):
-        post_count = Post.objects.count()
         response = self.auth_client.post(
             path=reverse('posts:post_edit',
-                         kwargs={'post_id': TestPostForm.post.id}),
+                         kwargs={'post_id': self.post.id}),
             data=TestPostForm.form_data,
             follow=True
         )
-        post_obj = Post.objects.get(id=TestPostForm.post.id)
+        post_obj = Post.objects.get(id=self.post.id)
         self.assertRedirects(response, reverse(
             'posts:post_detail',
-            args=(TestPostForm.post.id,)
+            args=(self.post.id,)
         ))
-        self.assertEqual(post_count, Post.objects.count())
-        self.assertEqual(post_obj.text, TestPostForm.form_data.get('text'))
-        self.assertEqual(post_obj.group.slug, TestPostForm.group_1.slug)
+        self.assertEqual(Post.objects.count(), 1)
+        self.assertEqual(post_obj.text, TestPostForm.form_data['text'])
+        self.assertEqual(post_obj.group.pk, TestPostForm.form_data['group'])
