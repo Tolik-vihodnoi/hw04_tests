@@ -1,11 +1,15 @@
 {% extends 'base.html' %}
 
+{% block title %}
+  Подписки {{ user }}
+{% endblock %}
+
 {% block content %}
 
-  <h1>Последние обновления на сайте</h1>
-{% include 'posts/includes/switcher.html' %}
-{% load cache %}
-  {% cache 20 index_page page_obj.number %}
+  <h1>Посты авторов, на которых вы подписаны</h1>
+  {% include 'posts/includes/switcher.html' %}
+  {% load cache %}
+  {% cache 20 follow_page page_obj.number %}
 
     {% for post in page_obj %}
       {% include 'posts/includes/article.html' %}

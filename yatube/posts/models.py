@@ -85,3 +85,21 @@ class Comment(models.Model):
 
     def __str__(self):
         return self.text[:settings.DISP_LETTERS]
+
+
+class Follow(models.Model):
+    user = models.ForeignKey(
+        User,
+        verbose_name='Подписчик',
+        on_delete=models.CASCADE,
+        related_name='follower'
+    )
+    author = models.ForeignKey(
+        User,
+        verbose_name='Автор',
+        on_delete=models.CASCADE,
+        related_name='following'
+    )
+
+    class Meta:
+        verbose_name = 'Подписки'

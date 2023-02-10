@@ -3,8 +3,8 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 
 from .forms import CommentForm, PostForm
-from .models import Group, Post, User
-from .utils import do_page_obj
+from .models import Follow, Group, Post, User
+from .utils import do_page_obj, extract_user_author
 
 
 def index(request):
@@ -32,9 +32,16 @@ def profile(request, username):
     posts_owner = get_object_or_404(User, username=username)
     posts = posts_owner.posts.select_related('author', 'group')
     page_obj = do_page_obj(request, posts, settings.NUM_OF_POSTS)
+    following = False
+    if request.user.is_authenticated:
+        following = Follow.objects.filter(
+            user=request.user,
+            author=posts_owner
+        ).exists()
     context = {
         'page_obj': page_obj,
-        'posts_owner': posts_owner
+        'posts_owner': posts_owner,
+        'following': following
     }
     return render(request, 'posts/profile.html', context)
 
@@ -95,3 +102,28 @@ def add_comment(request, post_id):
         comment.post = post
         comment.save()
     return redirect('posts:post_detail', post_id)
+
+
+@login_required
+def follow_index(request):
+    follower = request.user
+    posts = Post.objects.filter(
+        author__following__user=follower).select_related('group', 'author')
+    page_obj = do_page_obj(request, posts, settings.NUM_OF_POSTS)
+    context = {'page_obj': page_obj}
+    return render(request, 'posts/follow.html', context)
+
+
+@login_required
+def profile_follow(request, username):
+    data = extract_user_author(request, username)
+    if not Follow.objects.filter(**data).exists():
+        Follow.objects.create(**data)
+    return redirect('posts:profile', username)
+
+
+@login_required
+def profile_unfollow(request, username):
+    data = extract_user_author(request, username)
+    Follow.objects.filter(**data).delete()
+    return redirect('posts:profile', username)

@@ -10,7 +10,7 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from posts.forms import PostForm
-from posts.models import Group, Post, Comment
+from posts.models import Group, Post, Comment, Follow
 
 
 TEMP_MEDIA_ROOT = tempfile.mktemp(dir=settings.BASE_DIR)
@@ -59,10 +59,15 @@ class PostViewTest(TestCase):
             author=PostViewTest.user_0,
             text='test comment actually'
         )
+        cls.follow = Follow.objects.create(
+            user=cls.user_1,
+            author=cls.user_0
+        )
         cls.form_fields_list = {
             'group': forms.ChoiceField,
             'text': forms.CharField,
         }
+        cls.follow_url = 'posts:follow_index'
 
     @classmethod
     def tearDownClass(cls):
@@ -72,6 +77,8 @@ class PostViewTest(TestCase):
     def setUp(self):
         self.auth_client_0 = Client()
         self.auth_client_0.force_login(PostViewTest.user_0)
+        self.auth_client_1 = Client()
+        self.auth_client_1.force_login(PostViewTest.user_1)
 
     def check_post(self, context, is_page=True):
         if is_page:
@@ -193,6 +200,39 @@ class PostViewTest(TestCase):
         resp_cleared_cache = self.auth_client_0.get(reverse('posts:index'))
         self.assertEqual(resp_before.content, resp_after.content)
         self.assertNotEqual(resp_before.content, resp_cleared_cache.content)
+
+    def test_can_auth_user_subscribe(self):
+        """Проверяет может ли подписаться авторизованный пользователь."""
+        Follow.objects.all().delete()
+        for _ in range(2):
+            self.auth_client_1.get(reverse(
+                'posts:profile_follow',
+                args=(PostViewTest.user_0.username,)
+            ))
+            self.assertEqual(Follow.objects.count(), 1)
+
+    def test_can_auth_user__unsubscribe(self):
+        """Проверяет может ли отписаться авторизованный пользователь."""
+        self.assertEqual(Follow.objects.count(), 1)
+        self.auth_client_1.get(reverse(
+            'posts:profile_unfollow',
+            args=(PostViewTest.user_0.username,)
+        ))
+        self.assertEqual(Follow.objects.count(), 0)
+
+    def test_follow_page_has_post(self):
+        """Проверяет что пост появился на странице подписок."""
+        context = self.auth_client_1.get(
+            reverse(PostViewTest.follow_url)).context
+        self.check_post(context)
+
+    def test_follow_page_has_not_post(self):
+        """Проверяет что пост не появился на странице подписок."""
+        context = self.auth_client_0.get(
+            reverse(PostViewTest.follow_url)).context
+        with self.assertRaisesMessage(
+                AssertionError, 'It seems like the page_obj is empty.'):
+            self.check_post(context)
 
 
 class PaginatorTest(TestCase):
