@@ -1,16 +1,23 @@
+import shutil
+import tempfile
 from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.paginator import Page
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from posts.forms import PostForm
-from posts.models import Group, Post
+from posts.models import Group, Post, Comment
 
+
+TEMP_MEDIA_ROOT = tempfile.mktemp(dir=settings.BASE_DIR)
 User = get_user_model()
 
 
+@override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
 class PostViewTest(TestCase):
 
     @classmethod
@@ -28,15 +35,39 @@ class PostViewTest(TestCase):
             slug='test_group_1',
             description='Тестовое описание 1'
         )
+        img_data = (
+            b'\x47\x49\x46\x38\x39\x61\x02\x00'
+            b'\x01\x00\x80\x00\x00\x00\x00\x00'
+            b'\xFF\xFF\xFF\x21\xF9\x04\x00\x00'
+            b'\x00\x00\x00\x2C\x00\x00\x00\x00'
+            b'\x02\x00\x01\x00\x00\x02\x02\x0C'
+            b'\x0A\x00\x3B'
+        )
+        cls.uploaded = SimpleUploadedFile(
+            name='small.jpg',
+            content=img_data,
+            content_type='image/jpeg'
+        )
         cls.post = Post.objects.create(
             group=cls.group_0,
             text='text of test article',
-            author=cls.user_0
+            author=cls.user_0,
+            image=cls.uploaded
+        )
+        cls.comment = Comment.objects.create(
+            post=PostViewTest.post,
+            author=PostViewTest.user_0,
+            text='test comment actually'
         )
         cls.form_fields_list = {
             'group': forms.ChoiceField,
             'text': forms.CharField,
         }
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
 
     def setUp(self):
         self.auth_client_0 = Client()
@@ -56,6 +87,10 @@ class PostViewTest(TestCase):
         self.assertEqual(post.author, PostViewTest.post.author)
         self.assertEqual(post.group, PostViewTest.post.group)
         self.assertEqual(post.pub_date, PostViewTest.post.pub_date)
+        upload_dir = post._meta.get_field('image').upload_to
+        self.assertEqual(
+            post.image, f'{upload_dir}{PostViewTest.uploaded.name}'
+        )
 
     def test_pages_use_correct_templates(self):
         """Проверяет, что namespace:name вызывает корректные шаблоны"""
@@ -75,19 +110,6 @@ class PostViewTest(TestCase):
             with self.subTest(url_name=url_name):
                 response = self.auth_client_0.get(url_name)
                 self.assertTemplateUsed(response, templ)
-
-    # def test_correct_page_obj_or_post_in_context(self):
-    #     url_list = [
-    #         reverse('posts:index'),
-    #         reverse('posts:group_list', args=(PostViewTest.group_0.slug,)),
-    #         reverse('posts:profile', args=(PostViewTest.user_0,)),
-    #         reverse('posts:post_detail', args=(PostViewTest.post.pk,)),
-    #     ]
-    #     for url in url_list:
-    #         with self.subTest(url=url):
-    #             context = self.auth_client_0.get(url).context
-    #             self.assertEqual(PostViewTest.extract_post(context).pk,
-    #                              PostViewTest.post.pk)
 
     def test_index_page_context(self):
         """Проверяет коррекстность переданного контекста
@@ -119,6 +141,14 @@ class PostViewTest(TestCase):
             reverse('posts:post_detail', args=(PostViewTest.post.pk,))
         ).context
         self.check_post(context, is_page=False)
+        self.assertIn('comments', context)
+        comments = context['comments']
+        self.assertEqual(len(comments), 1)
+        comment = comments[0]
+        self.assertIsInstance(comment, Comment)
+        self.assertEqual(comment.text, PostViewTest.comment.text)
+        self.assertEqual(comment.author, PostViewTest.comment.author)
+        self.assertEqual(comment.post, PostViewTest.comment.post)
 
     def test_tested_post_not_exist(self):
         url_list = [
@@ -153,6 +183,16 @@ class PostViewTest(TestCase):
                 self.assertIsInstance(form_obj, PostForm)
                 field_value = form_obj.fields.get(field)
                 self.assertIsInstance(field_value, form_field)
+
+    def test_is_index_page_data_cached(self):
+        """Проверяет кэшироване главное страницы."""
+        resp_before = self.auth_client_0.get(reverse('posts:index'))
+        Post.objects.all().delete()
+        resp_after = self.auth_client_0.get(reverse('posts:index'))
+        cache.clear()
+        resp_cleared_cache = self.auth_client_0.get(reverse('posts:index'))
+        self.assertEqual(resp_before.content, resp_after.content)
+        self.assertNotEqual(resp_before.content, resp_cleared_cache.content)
 
 
 class PaginatorTest(TestCase):
@@ -198,3 +238,9 @@ class PaginatorTest(TestCase):
                 len_2page_posts = len(resp_2_page.context.get('page_obj'))
                 self.assertEqual(len_1page_posts, settings.NUM_OF_POSTS)
                 self.assertEqual(len_2page_posts, PaginatorTest.PLUS_POSTS)
+
+    def test_have_index_page_changed_in_the_second_page(self):
+        """Проверяет кэшироване главное страницы."""
+        resp_p_1 = self.auth_client.get(reverse('posts:index'))
+        resp_p_2 = self.auth_client.get(reverse('posts:index'), {'page': 2})
+        self.assertNotEqual(resp_p_1.content, resp_p_2.content)

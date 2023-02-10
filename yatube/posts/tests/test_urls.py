@@ -47,6 +47,7 @@ class PostUrlTest(TestCase):
             (f'/posts/{PostUrlTest.post.id}/'
              f'edit/'): f'/auth/login/?next=/posts/{PostUrlTest.post.id}/edit/'
         }
+        self.unexisting_url = {'/unexisting_page/': 'core/404.html'}
 
     def test_url_exists_at_desired_location_for_unauth_users(self):
         """Проверяет, существуют ли страницы для неавторизованных юзеров."""
@@ -66,8 +67,9 @@ class PostUrlTest(TestCase):
     def test_unexisting_page_url_for_auth_users(self):
         """Проверяет, что возникает ошибка при переходе на
         несуществующий url."""
-        response = self.auth_client.get('/unexisting_page/')
-        self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
+        for url in self.unexisting_url.keys():
+            response = self.auth_client.get(url)
+            self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
     def test_redirect_if_post_by_not_author_but_auth_user(self):
         """Проверяет будет ли редирект со страницы правки поста
@@ -93,6 +95,13 @@ class PostUrlTest(TestCase):
         """Проверяет корректность шаблонов для авторизованных юзеров."""
         self.url_dict_auth.update(self.url_dict_unauth)
         for url, template in self.url_dict_auth.items():
+            with self.subTest(url=url):
+                response = self.auth_client.get(url)
+                self.assertTemplateUsed(response, template)
+
+    def test_correct_template_for_404(self):
+        """Проверяет корректность шаблонов ошибки 404."""
+        for url, template in self.unexisting_url.items():
             with self.subTest(url=url):
                 response = self.auth_client.get(url)
                 self.assertTemplateUsed(response, template)

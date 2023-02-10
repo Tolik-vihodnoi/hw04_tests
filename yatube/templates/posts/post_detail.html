@@ -32,9 +32,9 @@
           </a>
         </li>
         <li class="list-group-item">
-          <a href="{% url 'posts:post_edit' post.id %}">
+          <a href="{% url 'posts:post_edit' post.id %}" class="btn btn-primary">
             {% if post.author == user %}
-            редактировать пост
+            редактировать запись
             {% endif %}
           </a>
         </li>
@@ -46,6 +46,9 @@
       {% endthumbnail %}
       <p>
         {{ post.text|linebreaksbr }}
+      </p>
+      <p>
+        {% include 'posts/includes/comments.html' %}
       </p>
     </article>
   </div>
